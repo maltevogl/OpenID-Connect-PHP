@@ -67,6 +67,9 @@ function b64url2b64($base64url) {
     return strtr($base64url, '-_', '+/');
 }
 
+function preg_rep($string) {
+    return preg_replace('/[\x00-\x1F\x7F]/u', ' ', base64url_decode($string));
+}
 
 /**
  * OpenIDConnect Exception Class
@@ -148,6 +151,11 @@ class OpenIDConnectClient
      * @var string if we acquire an id token it will be stored here
      */
     private $idToken;
+
+    /**
+     * @var string if we decode claims they will be stored here
+     */
+    private $decodedClaims;
 
     /**
      * @var string stores the token response
@@ -282,6 +290,9 @@ class OpenIDConnectClient
 
                 // Save the access token
                 $this->accessToken = $token_json->access_token;
+
+                //Save the claims
+                $this->decodedClaims = $claims;
 
                 // Save the refresh token, if we got one
                 if (isset($token_json->refresh_token)) $this->refreshToken = $token_json->refresh_token;
@@ -433,7 +444,6 @@ class OpenIDConnectClient
               ?: @$_SERVER['SERVER_ADDR'];
 
         $port = (443 == $port) || (80 == $port) ? '' : ':' . $port;
-
         return sprintf('%s://%s%s/%s', $protocol, $host, $port, @trim(reset(explode("?", $_SERVER['REQUEST_URI'])), '/'));
     }
 
@@ -511,11 +521,10 @@ class OpenIDConnectClient
         return json_decode($this->fetchURL($token_endpoint, $post_params, $headers));
     }
 
-
  /**
      * Requests a resource owner token
      * (Defined in https://tools.ietf.org/html/rfc6749#section-4.3)
-     * 
+     *
      * @param $bClientAuth boolean Indicates that the Client ID and Secret be used for client authentication
      */
     public function requestResourceOwnerToken($bClientAuth =  FALSE) {
@@ -670,7 +679,7 @@ class OpenIDConnectClient
 	}
         return $rsa->verify($payload, $signature);
     }
-	
+
     /**
      * @param string $hashtype
      * @param object $key
@@ -717,12 +726,12 @@ class OpenIDConnectClient
                                                      $this->get_key_for_header($jwks->keys, $header),
                                                      $payload, $signature);
             break;
-	case 'HS256':
-        case 'HS512':
-        case 'HS384':
-            $hashtype = 'SHA' . substr($header->alg, 2);
-            $verified = $this->verifyHMACJWTsignature($hashtype, $this->getClientSecret(), $payload, $signature);
-            break;		
+        case 'HS256':
+            case 'HS512':
+            case 'HS384':
+                $hashtype = 'SHA' . substr($header->alg, 2);
+                $verified = $this->verifyHMACJWTsignature($hashtype, $this->getClientSecret(), $payload, $signature);
+            break;
         default:
             throw new OpenIDConnectClientException('No support for signature type: ' . $header->alg);
         }
@@ -1129,6 +1138,38 @@ class OpenIDConnectClient
     /**
      * @return array
      */
+    public function getAllClaims() {
+        $allClaim= $this->decodedClaims;
+        return $allClaim;
+    }
+
+    /**
+     * @return string
+     */
+    public function getSubClaim() {
+        $subClaim = $this->decodedClaims->sub;
+        return preg_rep($subClaim);
+    }
+
+    /**
+     * @return string
+     */
+    public function getNameClaim() {
+        $nameClaim = $this->decodedClaims->name;
+        return $nameClaim;
+    }
+
+    /**
+     * @return string
+     */
+    public function getEmailClaim() {
+        $emailClaim = $this->decodedClaims->email;
+        return $emailClaim;
+    }
+
+    /**
+     * @return array
+     */
     public function getAccessTokenHeader() {
         return $this->decodeJWT($this->accessToken, 0);
     }
@@ -1217,7 +1258,6 @@ class OpenIDConnectClient
     protected function unsetState() {
         unset($_SESSION['openid_connect_state']);
     }
-
     /**
      * Get the response code from last action/curl request.
      *
@@ -1242,7 +1282,7 @@ class OpenIDConnectClient
     {
         return $this->timeOut;
     }
-	
+
     /**
      * Safely calculate length of binary string
      * @param string
